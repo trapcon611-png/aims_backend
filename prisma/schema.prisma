@@ -13,6 +13,7 @@ datasource db {
 enum Role {
   STUDENT
   PARENT
+  TEACHER
   SUPER_ADMIN
 }
 
@@ -26,6 +27,7 @@ model User {
 
   studentProfile StudentProfile?
   parentProfile  ParentProfile?
+  teacherProfile TeacherProfile?
   attempts       TestAttempt[]
 }
 
@@ -55,6 +57,22 @@ model ParentProfile {
   user      User     @relation(fields: [userId], references: [id])
   mobile    String   @unique // Parent's Number (Login ID for Parent)
   children  StudentProfile[]
+}
+
+model TeacherProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  fullName     String
+  email        String?  @unique
+  mobile       String?  @unique
+  subject      String?  // Primary subject expertise
+  qualification String?
+  
+  // Relations
+  questionBanks QuestionBank[]
+  examsCreated  Exam[]
+  createdAt     DateTime @default(now())
 }
 
 // --- 2. ACADEMIC MANAGEMENT ---
@@ -99,33 +117,131 @@ model Exam {
   description String?
   durationMin Int      
   totalMarks  Int
-  scheduledAt DateTime 
+  scheduledAt DateTime
+  isPublished Boolean  @default(false) // Draft or Published
+  
+  // Teacher who created this exam
+  createdById String?
+  createdBy   TeacherProfile? @relation(fields: [createdById], references: [id])
+  
   questions   Question[]
   attempts    TestAttempt[]
   createdAt   DateTime @default(now())
 }
 
+// Question Bank - Teachers create and manage questions here
+model QuestionBank {
+  id          String   @id @default(uuid())
+  createdById String
+  createdBy   TeacherProfile @relation(fields: [createdById], references: [id])
+  
+  // Question Content
+  questionText String   // Text description of the question
+  imagePath    String?  // Optional image for the question
+  
+  // Options (stored as JSON for flexibility)
+  options      Json     // {"A": "option1", "B": "option2", "C": "option3", "D": "option4"}
+  correctOption String  // "A", "B", "C", or "D"
+  explanation   String? // Explanation for the correct answer
+  
+  // Categorization
+  subject      String   // Physics, Chemistry, Math, etc.
+  topic        String?  // Mechanics, Algebra, etc.
+  difficulty   String   // Easy, Medium, Hard
+  
+  // Marking
+  marks        Int      @default(4)
+  negative     Int      @default(-1)
+  
+  // Metadata
+  tags         String[] // For easy filtering: ["JEE", "NEET", "Kinematics"]
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Track usage in exams
+  usedInQuestions Question[]
+}
+
 model Question {
-  id            String @id @default(uuid())
-  examId        String
-  exam          Exam   @relation(fields: [examId], references: [id])
-  imagePath     String 
-  correctOption String 
-  subject       String 
-  difficulty    String 
-  marks         Int     @default(4)
-  negative      Int     @default(-1)
+  id              String @id @default(uuid())
+  examId          String
+  exam            Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+  
+  // Link to question bank (optional - for reusability)
+  questionBankId  String?
+  questionBank    QuestionBank? @relation(fields: [questionBankId], references: [id])
+  
+  // Question can be created directly for exam or pulled from bank
+  questionText    String
+  imagePath       String?
+  options         Json     // {"A": "option1", "B": "option2", "C": "option3", "D": "option4"}
+  correctOption   String   // "A", "B", "C", or "D"
+  explanation     String?
+  
+  subject         String
+  difficulty      String
+  marks           Int      @default(4)
+  negative        Int      @default(-1)
+  
+  // Order in the exam
+  orderIndex      Int      @default(0)
+  
+  // Track student answers
+  answers         Answer[]
 }
 
 model TestAttempt {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  examId      String
-  exam        Exam     @relation(fields: [examId], references: [id])
-  totalScore  Float    @default(0)
-  answers     Json?    
-  submittedAt DateTime?
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  examId       String
+  exam         Exam     @relation(fields: [examId], references: [id])
+  
+  // Attempt Status
+  status       AttemptStatus @default(IN_PROGRESS)
+  
+  // Scoring
+  totalScore   Float    @default(0)
+  correctCount Int      @default(0)
+  wrongCount   Int      @default(0)
+  skippedCount Int      @default(0)
+  
+  // Time Tracking
+  startedAt    DateTime @default(now())
+  submittedAt  DateTime?
+  timeSpentSec Int?     // Total time spent in seconds
+  
+  // Individual answers for detailed analytics
+  answers      Answer[]
+  
+  @@index([userId, examId])
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EVALUATED
+}
+
+// Individual answer for each question
+model Answer {
+  id              String   @id @default(uuid())
+  attemptId       String
+  attempt         TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question @relation(fields: [questionId], references: [id])
+  
+  selectedOption  String?  // "A", "B", "C", "D" or null if skipped
+  isCorrect       Boolean  @default(false)
+  marksAwarded    Float    @default(0) // Can be positive, negative, or zero
+  timeSpentSec    Int?     // Time spent on this question
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
 }
 
 // --- 4. FINANCE & ACCOUNTS (Upgraded) ---
