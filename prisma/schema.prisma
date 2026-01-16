@@ -1,0 +1,154 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- 1. USER & ADMISSION MANAGEMENT ---
+
+enum Role {
+  STUDENT
+  PARENT
+  SUPER_ADMIN
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique // This is the Enrollment ID (Login ID)
+  password  String
+  role      Role
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  studentProfile StudentProfile?
+  parentProfile  ParentProfile?
+  attempts       TestAttempt[]
+}
+
+model StudentProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  fullName  String
+  mobile    String?  // Student's personal number
+  
+  // Admission Details
+  batchId   String?
+  batch     Batch?   @relation(fields: [batchId], references: [id])
+  
+  // Parent Link (We map this during admission)
+  parentId  String?
+  parent    ParentProfile? @relation(fields: [parentId], references: [id])
+  
+  // Fee Management
+  feeAgreed Float      @default(0) // Total Fees decided during admission
+  feesPaid  FeeRecord[]
+}
+
+model ParentProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  mobile    String   @unique // Parent's Number (Login ID for Parent)
+  children  StudentProfile[]
+}
+
+// --- 2. ACADEMIC MANAGEMENT ---
+
+model Batch {
+  id        String   @id @default(uuid())
+  name      String   // e.g., "11th JEE - Batch A"
+  students  StudentProfile[]
+  notices   Notice[]
+  resources Resource[]
+}
+
+model Notice {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   // The message
+  batchId   String?  // If empty, it's for everyone
+  batch     Batch?   @relation(fields: [batchId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+enum ResourceType {
+  VIDEO  // For YouTube Links
+  NOTE   // For PDF Links
+}
+
+model Resource {
+  id        String       @id @default(uuid())
+  title     String
+  type      ResourceType // VIDEO or NOTE
+  url       String       // YouTube URL or Drive Link
+  batchId   String?
+  batch     Batch?       @relation(fields: [batchId], references: [id])
+  createdAt DateTime     @default(now())
+}
+
+// --- 3. EXAM SYSTEM ---
+
+model Exam {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  durationMin Int      
+  totalMarks  Int
+  scheduledAt DateTime 
+  questions   Question[]
+  attempts    TestAttempt[]
+  createdAt   DateTime @default(now())
+}
+
+model Question {
+  id            String @id @default(uuid())
+  examId        String
+  exam          Exam   @relation(fields: [examId], references: [id])
+  imagePath     String 
+  correctOption String 
+  subject       String 
+  difficulty    String 
+  marks         Int     @default(4)
+  negative      Int     @default(-1)
+}
+
+model TestAttempt {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  examId      String
+  exam        Exam     @relation(fields: [examId], references: [id])
+  totalScore  Float    @default(0)
+  answers     Json?    
+  submittedAt DateTime?
+}
+
+// --- 4. FINANCE & ACCOUNTS (Upgraded) ---
+
+model FeeRecord {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     StudentProfile @relation(fields: [studentId], references: [id])
+  amount      Float
+  date        DateTime @default(now())
+  remarks     String?
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  title       String   // e.g., "Math Books Purchase" or "April Rent"
+  category    String   // Marketing, Salary, Rent, Books, Dresses, Trips, Software, Events
+  amount      Float    // Total Final Cost
+  
+  // Inventory Details (Optional - Only for Books/Dresses)
+  vendor      String?  // e.g., "Arihant Publications" or "Raymonds"
+  quantity    Int?     // e.g., 50 books
+  unitPrice   Float?   // e.g., 500 per book
+
+  description String?
+  date        DateTime @default(now())
+}
